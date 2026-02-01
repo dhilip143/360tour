@@ -1,4 +1,4 @@
-import Tour from "./component/tour"
+import Tour from "/src/component/Tour.jsx"
 
 function App() {
   return(
