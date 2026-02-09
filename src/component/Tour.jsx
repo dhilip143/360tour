@@ -64,7 +64,7 @@ function Tour() {
     
     icons.forEach(icon => scene.add(icon));
     roomIconsRef.current = icons;
-  }, [currentRoom, isDarkMode]);
+  }, [currentRoom]);
 
   const createRoomIcon = (index, position) => {
     const canvas = document.createElement('canvas');
@@ -177,7 +177,6 @@ function Tour() {
     });
   };
 
-  // ✅ PARALLAX EFFECT - Smooth camera movement + texture transition
   const parallaxTransition = (targetRoomIndex) => {
     setIsTransitioning(true);
     
@@ -189,17 +188,15 @@ function Tour() {
     
     if (!camera || !controls || !sphere) return;
 
-    // Start position
     const startCameraPos = camera.position.clone();
     const startTarget = controls.target.clone();
     
-    // End position (parallax effect)
     const targetDirection = new THREE.Vector3(room.cameraTarget.x, room.cameraTarget.y, room.cameraTarget.z).normalize();
     const endCameraPos = targetDirection.clone().multiplyScalar(8);
     const endTarget = new THREE.Vector3(room.cameraTarget.x, room.cameraTarget.y, room.cameraTarget.z);
 
     let progress = 0;
-    const duration = 1200; // 1.2 seconds
+    const duration = 1200;
     const startTime = Date.now();
 
     const texture = textureLoader.load(room.texture);
@@ -208,16 +205,11 @@ function Tour() {
       const elapsed = Date.now() - startTime;
       progress = Math.min(elapsed / duration, 1);
       
-      // Easing function (smooth parallax)
       const easedProgress = 1 - Math.pow(1 - progress, 3);
 
-      // Interpolate camera position
       camera.position.lerpVectors(startCameraPos, endCameraPos, easedProgress);
-      
-      // Interpolate controls target
       controls.target.lerpVectors(startTarget, endTarget, easedProgress);
       
-      // Texture fade transition
       if (progress > 0.3) {
         sphere.material.map = texture;
         sphere.material.needsUpdate = true;
@@ -241,12 +233,12 @@ function Tour() {
     if (!mount) return;
 
     const scene = new THREE.Scene();
-    scene.background = isDarkMode ? new THREE.Color(0x111111) : new THREE.Color(0xf5f5f5);
+    scene.background = new THREE.Color(0xf5f5f5);
     
     const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setClearColor(isDarkMode ? 0x000000 : 0xffffff, 0);
+    renderer.setClearColor(0xffffff, 0);
     mount.appendChild(renderer.domElement);
 
     sceneRef.current = scene;
@@ -256,13 +248,17 @@ function Tour() {
     const geometry = new THREE.SphereGeometry(50, 64, 64);
     const material = new THREE.MeshBasicMaterial({
       side: THREE.BackSide,
-      color: isDarkMode ? 0x333333 : 0xffffff
+      color: 0xffffff
     });
     const sphere = new THREE.Mesh(geometry, material);
     scene.add(sphere);
     sphereRef.current = sphere;
 
-    updateRoomIcons();
+    // ✅ FIX WHITE SCREEN - Load Living Room texture IMMEDIATELY
+    const textureLoader = new THREE.TextureLoader();
+    const livingTexture = textureLoader.load(living);
+    sphere.material.map = livingTexture;
+    sphere.material.needsUpdate = true;
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
@@ -273,6 +269,11 @@ function Tour() {
     controlsRef.current = controls;
 
     camera.position.set(0, 0, 0.1);
+
+    // Create initial icon AFTER scene is ready
+    setTimeout(() => {
+      updateRoomIcons();
+    }, 100);
 
     const handleClick = (event) => {
       if (isTransitioning) return;
@@ -288,13 +289,11 @@ function Tour() {
         const clickedIcon = intersects[0].object;
         const roomIndex = clickedIcon.userData.roomIndex;
         
-        // Icon click feedback
         clickedIcon.scale.multiplyScalar(1.3);
         setTimeout(() => {
           clickedIcon.scale.copy(clickedIcon.userData.originalScale);
         }, 200);
         
-        // ✅ PARALLAX TRANSITION
         parallaxTransition(roomIndex);
       }
     };
@@ -373,7 +372,6 @@ function Tour() {
   return (
     <div className={`fixed inset-0 overflow-hidden ${isDarkMode ? 'bg-gray-950' : 'bg-gradient-to-br from-gray-50 to-gray-100'} ${isTransitioning ? 'pointer-events-none' : ''}`}>
       <div className="w-screen h-screen relative" ref={mountRef}>
-        {/* ALL JSX REMAINS EXACTLY SAME */}
         <div className="absolute top-8 left-8 flex items-center gap-6 z-50">
           <div className="flex flex-col gap-4">
             {rooms.map((room, index) => (
@@ -448,18 +446,6 @@ function Tour() {
         }`}>
           {isDarkMode ? '🌙 Dark Mode' : '☀️ Light Mode'}
         </div>
-
-        {/* <div className={`absolute top-32 right-8 px-4 py-3 rounded-xl text-sm z-50 backdrop-blur-sm border max-w-xs transition-all duration-300 ${
-          isDarkMode ? 'bg-gray-900/90 text-gray-200 border-gray-700' : 'bg-white/90 text-gray-700 border-gray-300'
-        }`}> */}
-          {/* <div className="font-medium mb-1 flex items-center gap-2">
-            <span className="text-lg">✨</span>
-            Parallax Navigation
-          </div> */}
-          {/* <div className={`text-xs ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-            Click icons for smooth room transitions!
-          </div> */}
-        {/* </div> */}
 
         {isTransitioning && (
           <div className={`absolute inset-0 flex items-center justify-center z-40 pointer-events-none`}>
