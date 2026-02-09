@@ -20,84 +20,65 @@ function Tour() {
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
 
-  // ✅ DOOR POSITIONS - NORMAL ROUND ICONS
   const rooms = [
     { 
       name: '🛋️', 
       texture: living, 
       cameraTarget: { x: 15, y: 0, z: 0 }, 
-      iconPos: { x: 0.92, y: 0.15, z: 0.05 }, // Living → Kitchen DOOR
+      iconPos: { x: 0.92, y: 0.15, z: 0.05 },
       displayName: 'Living Room'
     },
     { 
       name: '🍳', 
       texture: kitchen, 
       cameraTarget: { x: -15, y: 0, z: 0 }, 
-      iconPos: { x: -0.92, y: 0.15, z: 0.05 }, // Kitchen → Bedroom DOOR
+      iconPos: { x: -0.92, y: 0.15, z: 0.05 }, 
       displayName: 'Kitchen'
     },
     { 
       name: '🛏️', 
       texture: bedroom, 
       cameraTarget: { x: 0, y: 0, z: 15 }, 
-      iconPos: { x: 0.05, y: 0.15, z: 0.92 }, // Bedroom → Bathroom DOOR
+      iconPos: { x: 0.05, y: 0.15, z: 0.92 }, 
       displayName: 'Bedroom'
     },
     { 
       name: '🚿', 
       texture: bathroom, 
       cameraTarget: { x: 0, y: 0, z: -15 }, 
-      iconPos: { x: -0.05, y: 0.15, z: -0.92 }, // Bathroom → Living DOOR
+      iconPos: { x: -0.05, y: 0.15, z: -0.92 }, 
       displayName: 'Bathroom'
     }
   ];
 
-  const getVisibleIconsForCurrentRoom = () => {
+  // ✅ FIXED: Proper icon management - icons now stay visible when returning
+  const updateRoomIcons = useCallback(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+
+    // Remove all existing icons
+    roomIconsRef.current.forEach(icon => scene.remove(icon));
+    
+    // Create new icons for current room
     const icons = [];
-    
-    switch(currentRoom) {
-      case 0: icons.push(createRoomIcon(1, rooms[1].iconPos));
-      break;
-      case 1: icons.push(createRoomIcon(2, rooms[2].iconPos));
-      break;
-      case 2: icons.push(createRoomIcon(3, rooms[3].iconPos));
-      break;
-      case 3: icons.push(createRoomIcon(0, rooms[0].iconPos));
-      break;
-      default: icons.push(createRoomIcon(1, rooms[1].iconPos));
+    if (currentRoom === 0) {
+      // Living room - show kitchen icon only
+      icons.push(createRoomIcon(1, rooms[1].iconPos));
     }
     
-    return icons;
-  };
+    icons.forEach(icon => scene.add(icon));
+    roomIconsRef.current = icons;
+  }, [currentRoom]);
 
-  const handleKeyDown = useCallback((event) => {
-    const controls = controlsRef.current;
-    if (!controls) return;
-
-    event.preventDefault();
-    const moveSpeed = 0.1;
-
-    switch (event.key) {
-      case 'ArrowLeft':  controls.target.x -= moveSpeed; break;
-      case 'ArrowRight': controls.target.x += moveSpeed; break;
-      case 'ArrowUp':    controls.object.position.multiplyScalar(0.95); break;
-      case 'ArrowDown':  controls.object.position.multiplyScalar(1.05); break;
-    }
-    controls.update();
-  }, []);
-
-  // ✅ NORMAL ROUND ICON - NO PATTERNS
   const createRoomIcon = (index, position) => {
     const canvas = document.createElement('canvas');
     canvas.width = 256;
     canvas.height = 256;
     const ctx = canvas.getContext('2d');
     
-    // Simple round colors
     const bgColor = isDarkMode ? 'rgba(255, 215, 0, 0.9)' : 'rgba(255, 140, 0, 0.9)';
     const textColor = isDarkMode ? '#000' : '#FFF';
     
-    // Simple round gradient
     const gradient = ctx.createRadialGradient(128, 128, 0, 128, 128, 128);
     gradient.addColorStop(0, bgColor);
     gradient.addColorStop(1, bgColor.replace('0.9', '0.4'));
@@ -107,14 +88,12 @@ function Tour() {
     ctx.arc(128, 128, 128, 0, Math.PI * 2);
     ctx.fill();
     
-    // Simple glow
     ctx.strokeStyle = isDarkMode ? '#FFF' : '#000';
     ctx.lineWidth = 6;
     ctx.beginPath();
     ctx.arc(128, 128, 122, 0, Math.PI * 2);
     ctx.stroke();
     
-    // Emoji
     ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
     ctx.shadowBlur = 10;
     ctx.shadowOffsetX = 2;
@@ -128,7 +107,6 @@ function Tour() {
     
     ctx.shadowColor = 'transparent';
     
-    // Room name
     ctx.fillStyle = textColor;
     ctx.font = 'bold 22px Arial';
     ctx.fillText(rooms[index].displayName, 128, 210);
@@ -154,6 +132,22 @@ function Tour() {
     
     return icon;
   };
+
+  const handleKeyDown = useCallback((event) => {
+    const controls = controlsRef.current;
+    if (!controls) return;
+
+    event.preventDefault();
+    const moveSpeed = 0.1;
+
+    switch (event.key) {
+      case 'ArrowLeft':  controls.target.x -= moveSpeed; break;
+      case 'ArrowRight': controls.target.x += moveSpeed; break;
+      case 'ArrowUp':    controls.object.position.multiplyScalar(0.95); break;
+      case 'ArrowDown':  controls.object.position.multiplyScalar(1.05); break;
+    }
+    controls.update();
+  }, []);
 
   const toggleTheme = () => {
     if (isTransitioning) return;
@@ -213,9 +207,8 @@ function Tour() {
     scene.add(sphere);
     sphereRef.current = sphere;
 
-    const icons = getVisibleIconsForCurrentRoom();
-    icons.forEach(icon => scene.add(icon));
-    roomIconsRef.current = icons;
+    // Initial icons
+    updateRoomIcons();
 
     const loadRoomTexture = (index) => {
       const room = rooms[index];
@@ -304,8 +297,14 @@ function Tour() {
       roomIconsRef.current.forEach(icon => scene.remove(icon));
       renderer.dispose();
     };
-  }, []); // ✅ FIXED: Empty deps - No recreation!
+  }, []);
 
+  // ✅ FIXED: Update icons when room changes
+  useEffect(() => {
+    updateRoomIcons();
+  }, [currentRoom, updateRoomIcons]);
+
+  // ✅ Update theme colors
   useEffect(() => {
     if (sceneRef.current) {
       sceneRef.current.background = isDarkMode ? new THREE.Color(0x111111) : new THREE.Color(0xf5f5f5);
@@ -318,22 +317,9 @@ function Tour() {
       rendererRef.current.setClearColor(isDarkMode ? 0x000000 : 0xffffff, 0);
     }
     
-    if (sceneRef.current && roomIconsRef.current.length > 0) {
-      roomIconsRef.current.forEach(icon => sceneRef.current.remove(icon));
-      const newIcons = getVisibleIconsForCurrentRoom();
-      newIcons.forEach(icon => sceneRef.current.add(icon));
-      roomIconsRef.current = newIcons;
-    }
-  }, [isDarkMode]); // ✅ Theme change only recreates icons
-
-  useEffect(() => {
-    if (sceneRef.current && roomIconsRef.current.length > 0) {
-      roomIconsRef.current.forEach(icon => sceneRef.current.remove(icon));
-      const newIcons = getVisibleIconsForCurrentRoom();
-      newIcons.forEach(icon => sceneRef.current.add(icon));
-      roomIconsRef.current = newIcons;
-    }
-  }, [currentRoom]);
+    // Recreate icons with new theme colors
+    updateRoomIcons();
+  }, [isDarkMode, updateRoomIcons]);
 
   const animateCameraToTarget = (targetPosition) => {
     const camera = cameraRef.current;
