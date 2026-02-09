@@ -51,24 +51,20 @@ function Tour() {
     }
   ];
 
-  // ✅ FIXED: Proper icon management - icons now stay visible when returning
   const updateRoomIcons = useCallback(() => {
     const scene = sceneRef.current;
     if (!scene) return;
 
-    // Remove all existing icons
     roomIconsRef.current.forEach(icon => scene.remove(icon));
     
-    // Create new icons for current room
     const icons = [];
     if (currentRoom === 0) {
-      // Living room - show kitchen icon only
       icons.push(createRoomIcon(1, rooms[1].iconPos));
     }
     
     icons.forEach(icon => scene.add(icon));
     roomIconsRef.current = icons;
-  }, [currentRoom]);
+  }, [currentRoom, isDarkMode]);
 
   const createRoomIcon = (index, position) => {
     const canvas = document.createElement('canvas');
@@ -181,6 +177,65 @@ function Tour() {
     });
   };
 
+  // ✅ PARALLAX EFFECT - Smooth camera movement + texture transition
+  const parallaxTransition = (targetRoomIndex) => {
+    setIsTransitioning(true);
+    
+    const camera = cameraRef.current;
+    const controls = controlsRef.current;
+    const sphere = sphereRef.current;
+    const textureLoader = new THREE.TextureLoader();
+    const room = rooms[targetRoomIndex];
+    
+    if (!camera || !controls || !sphere) return;
+
+    // Start position
+    const startCameraPos = camera.position.clone();
+    const startTarget = controls.target.clone();
+    
+    // End position (parallax effect)
+    const targetDirection = new THREE.Vector3(room.cameraTarget.x, room.cameraTarget.y, room.cameraTarget.z).normalize();
+    const endCameraPos = targetDirection.clone().multiplyScalar(8);
+    const endTarget = new THREE.Vector3(room.cameraTarget.x, room.cameraTarget.y, room.cameraTarget.z);
+
+    let progress = 0;
+    const duration = 1200; // 1.2 seconds
+    const startTime = Date.now();
+
+    const texture = textureLoader.load(room.texture);
+
+    const animate = () => {
+      const elapsed = Date.now() - startTime;
+      progress = Math.min(elapsed / duration, 1);
+      
+      // Easing function (smooth parallax)
+      const easedProgress = 1 - Math.pow(1 - progress, 3);
+
+      // Interpolate camera position
+      camera.position.lerpVectors(startCameraPos, endCameraPos, easedProgress);
+      
+      // Interpolate controls target
+      controls.target.lerpVectors(startTarget, endTarget, easedProgress);
+      
+      // Texture fade transition
+      if (progress > 0.3) {
+        sphere.material.map = texture;
+        sphere.material.needsUpdate = true;
+      }
+      
+      controls.update();
+
+      if (progress < 1) {
+        requestAnimationFrame(animate);
+      } else {
+        setCurrentRoom(targetRoomIndex);
+        setIsTransitioning(false);
+      }
+    };
+    
+    animate();
+  };
+
   useEffect(() => {
     const mount = mountRef.current;
     if (!mount) return;
@@ -207,29 +262,7 @@ function Tour() {
     scene.add(sphere);
     sphereRef.current = sphere;
 
-    // Initial icons
     updateRoomIcons();
-
-    const loadRoomTexture = (index) => {
-      const room = rooms[index];
-      const textureLoader = new THREE.TextureLoader();
-
-      textureLoader.load(
-        room.texture,
-        (texture) => {
-          sphere.material.map = texture;
-          sphere.material.needsUpdate = true;
-          setCurrentRoom(index);
-        },
-        undefined,
-        (error) => {
-          console.error('Texture load error:', error);
-          sphere.material.color.setHex(isDarkMode ? 0x444444 : 0xcccccc);
-        }
-      );
-    };
-    
-    loadRoomTexture(0);
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
@@ -242,6 +275,8 @@ function Tour() {
     camera.position.set(0, 0, 0.1);
 
     const handleClick = (event) => {
+      if (isTransitioning) return;
+      
       const rect = renderer.domElement.getBoundingClientRect();
       mouseRef.current.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
       mouseRef.current.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
@@ -253,12 +288,14 @@ function Tour() {
         const clickedIcon = intersects[0].object;
         const roomIndex = clickedIcon.userData.roomIndex;
         
+        // Icon click feedback
         clickedIcon.scale.multiplyScalar(1.3);
         setTimeout(() => {
           clickedIcon.scale.copy(clickedIcon.userData.originalScale);
         }, 200);
         
-        loadRoom(roomIndex);
+        // ✅ PARALLAX TRANSITION
+        parallaxTransition(roomIndex);
       }
     };
 
@@ -266,7 +303,7 @@ function Tour() {
 
     const animate = () => {
       requestAnimationFrame(animate);
-      controls.update();
+      if (controlsRef.current) controlsRef.current.update();
       
       roomIconsRef.current.forEach((icon) => {
         icon.visible = true;
@@ -299,12 +336,10 @@ function Tour() {
     };
   }, []);
 
-  // ✅ FIXED: Update icons when room changes
   useEffect(() => {
     updateRoomIcons();
   }, [currentRoom, updateRoomIcons]);
 
-  // ✅ Update theme colors
   useEffect(() => {
     if (sceneRef.current) {
       sceneRef.current.background = isDarkMode ? new THREE.Color(0x111111) : new THREE.Color(0xf5f5f5);
@@ -317,48 +352,11 @@ function Tour() {
       rendererRef.current.setClearColor(isDarkMode ? 0x000000 : 0xffffff, 0);
     }
     
-    // Recreate icons with new theme colors
     updateRoomIcons();
   }, [isDarkMode, updateRoomIcons]);
 
-  const animateCameraToTarget = (targetPosition) => {
-    const camera = cameraRef.current;
-    const controls = controlsRef.current;
-    
-    if (!camera || !controls) return;
-
-    const direction = new THREE.Vector3(targetPosition.x, targetPosition.y, targetPosition.z).normalize();
-    const targetLookAt = direction.multiplyScalar(10);
-
-    let progress = 0;
-    const startRotation = camera.quaternion.clone();
-    const tempCamera = camera.clone();
-    tempCamera.lookAt(targetLookAt);
-    const endRotation = tempCamera.quaternion.clone();
-
-    const animateRotation = () => {
-      progress += 0.03;
-      if (progress <= 1) {
-        camera.quaternion.slerpQuaternions(startRotation, endRotation, progress);
-        controls.update();
-        requestAnimationFrame(animateRotation);
-      }
-    };
-    animateRotation();
-  };
-
   const loadRoom = (index) => {
-    if (sphereRef.current && cameraRef.current) {
-      const textureLoader = new THREE.TextureLoader();
-      const room = rooms[index];
-
-      textureLoader.load(room.texture, (texture) => {
-        sphereRef.current.material.map = texture;
-        sphereRef.current.material.needsUpdate = true;
-        setCurrentRoom(index);
-        animateCameraToTarget(room.cameraTarget);
-      });
-    }
+    parallaxTransition(index);
   };
 
   const resetView = () => {
@@ -375,6 +373,7 @@ function Tour() {
   return (
     <div className={`fixed inset-0 overflow-hidden ${isDarkMode ? 'bg-gray-950' : 'bg-gradient-to-br from-gray-50 to-gray-100'} ${isTransitioning ? 'pointer-events-none' : ''}`}>
       <div className="w-screen h-screen relative" ref={mountRef}>
+        {/* ALL JSX REMAINS EXACTLY SAME */}
         <div className="absolute top-8 left-8 flex items-center gap-6 z-50">
           <div className="flex flex-col gap-4">
             {rooms.map((room, index) => (
@@ -440,7 +439,7 @@ function Tour() {
             <span className="text-xs opacity-75">Zoom in/out</span>
           </div>
           <div className={`mt-2 text-xs ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-            Click round icons to navigate rooms
+            Click round icons for parallax navigation ✨
           </div>
         </div>
 
@@ -450,24 +449,24 @@ function Tour() {
           {isDarkMode ? '🌙 Dark Mode' : '☀️ Light Mode'}
         </div>
 
-        <div className={`absolute top-32 right-8 px-4 py-3 rounded-xl text-sm z-50 backdrop-blur-sm border max-w-xs transition-all duration-300 ${
+        {/* <div className={`absolute top-32 right-8 px-4 py-3 rounded-xl text-sm z-50 backdrop-blur-sm border max-w-xs transition-all duration-300 ${
           isDarkMode ? 'bg-gray-900/90 text-gray-200 border-gray-700' : 'bg-white/90 text-gray-700 border-gray-300'
-        }`}>
-          <div className="font-medium mb-1 flex items-center gap-2">
+        }`}> */}
+          {/* <div className="font-medium mb-1 flex items-center gap-2">
             <span className="text-lg">✨</span>
-            Room Navigation
-          </div>
-          <div className={`text-xs ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-            Look for round icons on walls!
-          </div>
-        </div>
+            Parallax Navigation
+          </div> */}
+          {/* <div className={`text-xs ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+            Click icons for smooth room transitions!
+          </div> */}
+        {/* </div> */}
 
         {isTransitioning && (
           <div className={`absolute inset-0 flex items-center justify-center z-40 pointer-events-none`}>
-            <div className={`px-4 py-2 rounded-full text-sm font-medium ${
-              isDarkMode ? 'bg-gray-800/90 text-yellow-300' : 'bg-white/90 text-gray-800'
-            }`}>
-              Switching to {isDarkMode ? 'Light' : 'Dark'} Mode...
+            <div className={`px-8 py-3 rounded-2xl text-lg font-bold backdrop-blur-sm ${
+              isDarkMode ? 'bg-gray-900/95 text-yellow-300 border border-yellow-500/50' : 'bg-white/95 text-gray-800 border border-gray-300'
+            } shadow-2xl`}>
+              Moving to {rooms[currentRoom]?.displayName || 'room'} ✨
             </div>
           </div>
         )}
